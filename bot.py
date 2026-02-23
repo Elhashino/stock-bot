@@ -160,16 +160,48 @@ def send_discord_warning(webhook_url: str, site_name: str, url: str) -> None:
         log.error(f"  -> Failed to send block alert: {exc}")
 
 
+def check_smyths_api(sku: str) -> bool:
+    """Check Smyths stock via their internal inventory API — no browser needed."""
+    url = (
+        f"https://www.smythstoys.com/api/uk/en-gb/product/product-inventory"
+        f"?code={sku}&userId=anonymous&bundle=false"
+    )
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+        "Accept": "application/json, text/plain, */*",
+        "Accept-Language": "en-GB,en;q=0.9",
+        "Referer": "https://www.smythstoys.com/uk/en-gb/",
+    }
+    try:
+        r = requests.get(url, headers=headers, timeout=15)
+        log.info(f"  -> Smyths API HTTP {r.status_code}")
+        if r.status_code == 200:
+            data = r.json()
+            hd_status = data.get("hdSection", {}).get("stockStatus", "UNKNOWN")
+            log.info(f"  -> Smyths API stockStatus: {hd_status}")
+            return hd_status == "INSTOCK"
+        else:
+            log.warning(f"  -> Smyths API blocked (HTTP {r.status_code})")
+            return "blocked"
+    except Exception as exc:
+        log.warning(f"  -> Smyths API error: {exc}")
+        return False
+
+
 def is_in_stock(page, item: dict) -> bool:
     url = item["url"]
     site_key = detect_site(url)
     site_cfg = SITES.get(site_key)
 
+    # Smyths: use their inventory API directly — browser is blocked from datacenter IPs
+    if site_key == "smyths":
+        sku = url.rstrip("/").split("/p/")[-1]
+        log.info(f"  -> Smyths inventory API (SKU: {sku})")
+        return check_smyths_api(sku)
+
     try:
         page.goto(url, wait_until="domcontentloaded", timeout=30000)
-        # Give JS extra time on Smyths (Vue app renders stock state async)
-        wait_ms = 5000 if site_key == "smyths" else 3000
-        page.wait_for_timeout(wait_ms)
+        page.wait_for_timeout(3000)
     except PlaywrightTimeoutError:
         log.warning(f"  -> Page load timed out")
         return False
@@ -237,17 +269,6 @@ def run_round(config: dict, notified: set) -> None:
             locale="en-GB",
         )
         page = context.new_page()
-
-        # Warm up Smyths session — visiting homepage first sets cookies
-        # that allow the real product pages to load (bypasses Incapsula cold-block)
-        if any("smythstoys.com" in item["url"] for item in config["items"]):
-            log.info("Warming up Smyths session (homepage visit)...")
-            try:
-                page.goto("https://www.smythstoys.com/uk/en-gb/", wait_until="domcontentloaded", timeout=30000)
-                page.wait_for_timeout(4000)
-                log.info(f"  -> Smyths homepage title: {page.title()}")
-            except Exception as exc:
-                log.warning(f"  -> Smyths warm-up failed: {exc}")
 
         for item in config["items"]:
             name = item["name"]
