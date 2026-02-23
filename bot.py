@@ -31,7 +31,9 @@ CONFIG_FILE = Path(__file__).parent / "config.json"
 SITES = {
     "argos": {
         "name": "Argos",
-        # Text found on page when IN stock
+        # Specific button selector — most reliable signal (from streetmerchant)
+        "in_stock_selectors": ['button[data-test="add-to-trolley-button-button"]'],
+        # Text found on page when IN stock (fallback)
         "in_stock_text": ["add to trolley", "add to basket"],
         # Text found on page when OUT of stock
         "oos_text": ["out of stock", "sold out", "check back soon", "currently unavailable"],
@@ -40,9 +42,13 @@ SITES = {
     },
     "smyths": {
         "name": "Smyths Toys",
+        # Specific button selector — most reliable signal (from streetmerchant)
+        "in_stock_selectors": ["#addToCartButton"],
+        # Text found on page when IN stock (fallback)
         "in_stock_text": ["add to basket", "add to cart"],
         "oos_text": ["out of stock", "sold out", "notify me when available", "pre-order"],
-        "oos_selectors": [".out-of-stock", ".notifyMe"],
+        # instoreMessage selector from streetmerchant is more precise than generic class
+        "oos_selectors": [".instoreMessage", ".out-of-stock", ".notifyMe"],
     },
     "game": {
         "name": "GAME",
@@ -180,7 +186,13 @@ def is_in_stock(session: requests.Session, item: dict) -> bool:
             if phrase in content_lower:
                 return False
 
-        # 3. In-stock text check
+        # 3. CSS selector in-stock check (most reliable — checks for actual buy button)
+        for sel in site_cfg.get("in_stock_selectors", []):
+            el = soup.select_one(sel)
+            if el:
+                return True
+
+        # 4. In-stock text check (fallback)
         for phrase in site_cfg["in_stock_text"]:
             if phrase in content_lower:
                 return True
