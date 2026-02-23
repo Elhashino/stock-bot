@@ -7,7 +7,7 @@ from datetime import datetime
 from pathlib import Path
 
 import requests
-from bs4 import BeautifulSoup
+from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -71,35 +71,6 @@ SITES = {
 }
 
 # ---------------------------------------------------------------------------
-# Browser-like headers to avoid blocks
-# ---------------------------------------------------------------------------
-HEADER_SETS = [
-    {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
-        "Accept-Language": "en-GB,en;q=0.9",
-        "Accept-Encoding": "gzip, deflate, br",
-        "DNT": "1",
-        "Connection": "keep-alive",
-        "Upgrade-Insecure-Requests": "1",
-        "Sec-Fetch-Dest": "document",
-        "Sec-Fetch-Mode": "navigate",
-        "Sec-Fetch-Site": "none",
-        "Sec-Fetch-User": "?1",
-        "Cache-Control": "max-age=0",
-    },
-    {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "en-GB,en-US;q=0.9,en;q=0.8",
-        "Accept-Encoding": "gzip, deflate, br",
-        "Connection": "keep-alive",
-        "Upgrade-Insecure-Requests": "1",
-    },
-]
-
-
-# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
@@ -148,37 +119,33 @@ def send_discord(webhook_url: str, item: dict, site_name: str) -> None:
         log.error(f"  -> Discord notification failed: {exc}")
 
 
-def make_session() -> requests.Session:
-    session = requests.Session()
-    session.headers.update(random.choice(HEADER_SETS))
-    return session
-
-
 # ---------------------------------------------------------------------------
-# Stock checking
+# Stock checking (Playwright — full JS rendering)
 # ---------------------------------------------------------------------------
 
-def is_in_stock(session: requests.Session, item: dict) -> bool:
+def is_in_stock(page, item: dict) -> bool:
     url = item["url"]
     site_key = detect_site(url)
     site_cfg = SITES.get(site_key)
 
     try:
-        resp = session.get(url, timeout=20, allow_redirects=True)
-        resp.raise_for_status()
-    except requests.exceptions.RequestException as exc:
-        log.warning(f"  -> Request failed: {exc}")
+        page.goto(url, wait_until="domcontentloaded", timeout=30000)
+        # Give JS time to render stock status
+        page.wait_for_timeout(3000)
+    except PlaywrightTimeoutError:
+        log.warning(f"  -> Page load timed out")
+        return False
+    except Exception as exc:
+        log.warning(f"  -> Page load failed: {exc}")
         return False
 
-    html = resp.text
-    content_lower = html.lower()
-    soup = BeautifulSoup(html, "lxml")
+    content_lower = page.content().lower()
 
     if site_cfg:
-        # 1. CSS selector OOS check
+        # 1. CSS selector OOS check (on fully rendered DOM)
         for sel in site_cfg.get("oos_selectors", []):
-            el = soup.select_one(sel)
-            if el and el.get_text(strip=True):
+            el = page.query_selector(sel)
+            if el and el.text_content().strip():
                 return False
 
         # 2. OOS text check
@@ -188,7 +155,7 @@ def is_in_stock(session: requests.Session, item: dict) -> bool:
 
         # 3. CSS selector in-stock check (most reliable — checks for actual buy button)
         for sel in site_cfg.get("in_stock_selectors", []):
-            el = soup.select_one(sel)
+            el = page.query_selector(sel)
             if el:
                 return True
 
@@ -216,31 +183,40 @@ def is_in_stock(session: requests.Session, item: dict) -> bool:
 # ---------------------------------------------------------------------------
 
 def run_round(config: dict, notified: set) -> None:
-    session = make_session()
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        context = browser.new_context(
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+            viewport={"width": 1280, "height": 720},
+            locale="en-GB",
+        )
+        page = context.new_page()
 
-    for item in config["items"]:
-        name = item["name"]
-        url = item["url"]
-        site_key = detect_site(url)
-        site_name = SITES.get(site_key, {}).get("name", "Unknown Site")
+        for item in config["items"]:
+            name = item["name"]
+            url = item["url"]
+            site_key = detect_site(url)
+            site_name = SITES.get(site_key, {}).get("name", "Unknown Site")
 
-        log.info(f"Checking [{site_name}] {name}")
+            log.info(f"Checking [{site_name}] {name}")
 
-        in_stock = is_in_stock(session, item)
+            in_stock = is_in_stock(page, item)
 
-        if in_stock:
-            log.info(f"  -> ✅ IN STOCK!")
-            if url not in notified:
-                send_discord(config["discord_webhook"], item, site_name)
-                notified.add(url)
+            if in_stock:
+                log.info(f"  -> ✅ IN STOCK!")
+                if url not in notified:
+                    send_discord(config["discord_webhook"], item, site_name)
+                    notified.add(url)
+                else:
+                    log.info(f"  -> Already notified, skipping Discord")
             else:
-                log.info(f"  -> Already notified, skipping Discord")
-        else:
-            log.info(f"  -> ❌ Out of stock")
-            notified.discard(url)
+                log.info(f"  -> ❌ Out of stock")
+                notified.discard(url)
 
-        # Polite delay between requests
-        time.sleep(random.uniform(3, 6))
+            # Polite delay between pages
+            time.sleep(random.uniform(2, 4))
+
+        browser.close()
 
 
 def main() -> None:
