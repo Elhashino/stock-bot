@@ -123,6 +123,43 @@ def send_discord(webhook_url: str, item: dict, site_name: str) -> None:
 # Stock checking (Playwright — full JS rendering)
 # ---------------------------------------------------------------------------
 
+BLOCK_PHRASES = [
+    "captcha", "are you a robot", "verify you are human", "access denied",
+    "403 forbidden", "bot detected", "unusual traffic", "please verify",
+    "security check", "cloudflare", "just a moment", "checking your browser",
+    "enable javascript and cookies", "ray id",
+]
+
+def is_blocked(content_lower: str) -> bool:
+    return any(phrase in content_lower for phrase in BLOCK_PHRASES)
+
+
+def send_discord_warning(webhook_url: str, site_name: str, url: str) -> None:
+    payload = {
+        "embeds": [
+            {
+                "title": f"⚠️ BLOCKED: {site_name}",
+                "url": url,
+                "description": (
+                    f"**{site_name}** appears to be blocking the stock checker!\n\n"
+                    f"A CAPTCHA or access denied page was detected.\n"
+                    f"Stock checks for this site may not be reliable until resolved."
+                ),
+                "color": 0xFF4500,
+                "footer": {
+                    "text": f"Stock Bot • {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}"
+                },
+            }
+        ]
+    }
+    try:
+        r = requests.post(webhook_url, json=payload, timeout=10)
+        r.raise_for_status()
+        log.warning(f"  -> Block alert sent to Discord!")
+    except Exception as exc:
+        log.error(f"  -> Failed to send block alert: {exc}")
+
+
 def is_in_stock(page, item: dict) -> bool:
     url = item["url"]
     site_key = detect_site(url)
@@ -140,6 +177,11 @@ def is_in_stock(page, item: dict) -> bool:
         return False
 
     content_lower = page.content().lower()
+
+    # Check if we're being blocked or hit a CAPTCHA
+    if is_blocked(content_lower):
+        log.warning(f"  -> ⚠️ BLOCKED/CAPTCHA detected!")
+        return "blocked"
 
     if site_cfg:
         # 1. CSS selector OOS check (on fully rendered DOM)
@@ -200,9 +242,14 @@ def run_round(config: dict, notified: set) -> None:
 
             log.info(f"Checking [{site_name}] {name}")
 
-            in_stock = is_in_stock(page, item)
+            result = is_in_stock(page, item)
 
-            if in_stock:
+            if result == "blocked":
+                log.warning(f"  -> ⚠️ {site_name} is blocking us")
+                if f"blocked_{site_key}" not in notified:
+                    send_discord_warning(config["discord_webhook"], site_name, url)
+                    notified.add(f"blocked_{site_key}")
+            elif result is True:
                 log.info(f"  -> ✅ IN STOCK!")
                 if url not in notified:
                     send_discord(config["discord_webhook"], item, site_name)
@@ -212,6 +259,7 @@ def run_round(config: dict, notified: set) -> None:
             else:
                 log.info(f"  -> ❌ Out of stock")
                 notified.discard(url)
+                notified.discard(f"blocked_{site_key}")
 
             # Polite delay between pages
             time.sleep(random.uniform(2, 4))
