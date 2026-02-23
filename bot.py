@@ -42,13 +42,13 @@ SITES = {
     },
     "smyths": {
         "name": "Smyths Toys",
-        # Specific button selector — most reliable signal (from streetmerchant)
-        "in_stock_selectors": ["#addToCartButton"],
-        # Text found on page when IN stock (fallback)
-        "in_stock_text": ["add to basket", "add to cart"],
-        "oos_text": ["out of stock", "sold out", "notify me when available", "pre-order"],
-        # instoreMessage selector from streetmerchant is more precise than generic class
-        "oos_selectors": [".instoreMessage", ".out-of-stock", ".notifyMe"],
+        # Green button only present when item is actually purchasable
+        "in_stock_selectors": ["button.bg-green-400"],
+        # JSON-LD schema in page source is the most reliable signal
+        "in_stock_text": ["schema.org/instock"],
+        # Disabled/greyed button = OOS; red "Out of stock" span also appears
+        "oos_selectors": ["button.cursor-not-allowed", "span.text-red-400"],
+        "oos_text": ["schema.org/outofstock", "out of stock", "sold out"],
     },
     "game": {
         "name": "GAME",
