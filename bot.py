@@ -167,14 +167,18 @@ def is_in_stock(page, item: dict) -> bool:
 
     try:
         page.goto(url, wait_until="domcontentloaded", timeout=30000)
-        # Give JS time to render stock status
-        page.wait_for_timeout(3000)
+        # Give JS extra time on Smyths (Vue app renders stock state async)
+        wait_ms = 5000 if site_key == "smyths" else 3000
+        page.wait_for_timeout(wait_ms)
     except PlaywrightTimeoutError:
         log.warning(f"  -> Page load timed out")
         return False
     except Exception as exc:
         log.warning(f"  -> Page load failed: {exc}")
         return False
+
+    # Log page title so we can verify the right page loaded in CI logs
+    log.info(f"  -> Page title: {page.title()}")
 
     content_lower = page.content().lower()
 
@@ -233,6 +237,17 @@ def run_round(config: dict, notified: set) -> None:
             locale="en-GB",
         )
         page = context.new_page()
+
+        # Warm up Smyths session — visiting homepage first sets cookies
+        # that allow the real product pages to load (bypasses Incapsula cold-block)
+        if any("smythstoys.com" in item["url"] for item in config["items"]):
+            log.info("Warming up Smyths session (homepage visit)...")
+            try:
+                page.goto("https://www.smythstoys.com/uk/en-gb/", wait_until="domcontentloaded", timeout=30000)
+                page.wait_for_timeout(4000)
+                log.info(f"  -> Smyths homepage title: {page.title()}")
+            except Exception as exc:
+                log.warning(f"  -> Smyths warm-up failed: {exc}")
 
         for item in config["items"]:
             name = item["name"]
