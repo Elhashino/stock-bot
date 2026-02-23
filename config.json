@@ -1,0 +1,42 @@
+{
+  "discord_webhook": "PASTE_YOUR_DISCORD_WEBHOOK_URL_HERE",
+  "check_interval": 120,
+  "items": [
+    {
+      "name": "Pokémon Day 2026 Collection Trading Cards",
+      "url": "https://www.argos.co.uk/product/8112402"
+    },
+    {
+      "name": "Pokémon Ascended Heroes Booster Pack",
+      "url": "https://www.argos.co.uk/product/8561527"
+    },
+    {
+      "name": "Pokémon Ascended Elite Trainer Box Trading Cards",
+      "url": "https://www.argos.co.uk/product/8568874"
+    },
+    {
+      "name": "Pokémon Ascended Pikachu Tepig Trading Cards",
+      "url": "https://www.argos.co.uk/product/8388793"
+    },
+    {
+      "name": "Pokémon TCG: Mega Evolution Ascended Heroes Elite Trainer Box",
+      "url": "https://www.smythstoys.com/uk/en-gb/brand/pokemon/pokemon-trading-cards-game/pokemon-trading-card-game-tcg-mega-evolution-ascended-heroes-elite-trainer-box/p/255839"
+    },
+    {
+      "name": "Pokémon TCG: Mega Evolution Ascended Heroes Collection",
+      "url": "https://www.smythstoys.com/uk/en-gb/brand/pokemon/pokemon-trading-cards-game/pokemon-trading-card-game-tcg-mega-evolution-ascended-heroes-collection/p/255838"
+    },
+    {
+      "name": "Pokémon TCG: Mega Evolution Ascended Heroes Poster Collection Assortment",
+      "url": "https://www.smythstoys.com/uk/en-gb/brand/pokemon/pokemon-trading-cards-game/pokemon-trading-card-game-tcg-mega-evolution-ascended-heroes-poster-collection-assortment/p/256300"
+    },
+    {
+      "name": "Pokémon TCG: Mega Evolution Ascended Heroes Booster Bundle",
+      "url": "https://www.smythstoys.com/uk/en-gb/brand/pokemon/pokemon-trading-cards-game/pokemon-trading-card-game-tcg-mega-evolution-ascended-heroes-booster-bundle/p/257185"
+    },
+    {
+      "name": "Pokémon TCG: Mega Evolution Ascended Heroes First Partners Pin Collection",
+      "url": "https://www.smythstoys.com/uk/en-gb/brand/pokemon/pokemon-trading-cards-game/pokemon-trading-card-game-tcg-mega-evolution-ascended-heroes-first-partners-pin-collection/p/256561"
+    }
+  ]
+}
